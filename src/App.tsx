@@ -201,15 +201,15 @@ export function App() {
             <h2 id="preview-title">Live search preview</h2>
             <div className="scenario">
               <div className="field">
-                <span>Loan type</span>
+                <span>Loan type:</span>
                 <span>{form.loanType}</span>
               </div>
               <div className="field">
-                <span>Loan amount</span>
+                <span>Loan amount:</span>
                 <span>{currencyFormatter.format(getLoanAmount(form.loanAmount))}</span>
               </div>
               <div className="field">
-                <span>Target close</span>
+                <span>Target close:</span>
                 <span>{form.timeline}</span>
               </div>
             </div>
