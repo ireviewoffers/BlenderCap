@@ -14,6 +14,7 @@ type SearchForm = {
   propertyState: string
   propertyZipCode: string
   loanAmount: string
+  requestedLtv: string
   creditProfile: CreditProfile
   timeline: Timeline
 }
@@ -24,6 +25,7 @@ type Lender = {
   propertyTypes: PropertyType[]
   minAmount: number
   maxAmount: number
+  maxLtv: number
   creditProfiles: CreditProfile[]
   timelines: Timeline[]
   responseTime: string
@@ -58,6 +60,7 @@ const defaultSearch: SearchForm = {
   propertyState: 'KY',
   propertyZipCode: '41314',
   loanAmount: '2400000',
+  requestedLtv: '68',
   creditProfile: 'Near prime',
   timeline: '21 days',
 }
@@ -69,6 +72,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Mixed-use', 'Retail', 'Multifamily'],
     minAmount: 750000,
     maxAmount: 12000000,
+    maxLtv: 75,
     creditProfiles: ['Prime', 'Near prime', 'Flexible'],
     timelines: ['14 days', '21 days'],
     responseTime: '24 hrs',
@@ -80,6 +84,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Residential', 'Multifamily'],
     minAmount: 250000,
     maxAmount: 5000000,
+    maxLtv: 80,
     creditProfiles: ['Prime', 'Near prime'],
     timelines: ['21 days', '30+ days'],
     responseTime: 'Same day',
@@ -91,6 +96,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Residential', 'Mixed-use', 'Multifamily'],
     minAmount: 150000,
     maxAmount: 3500000,
+    maxLtv: 70,
     creditProfiles: ['Near prime', 'Flexible'],
     timelines: ['14 days', '21 days'],
     responseTime: '48 hrs',
@@ -102,6 +108,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Retail', 'Mixed-use', 'Multifamily'],
     minAmount: 1000000,
     maxAmount: 20000000,
+    maxLtv: 65,
     creditProfiles: ['Prime'],
     timelines: ['30+ days'],
     responseTime: '2 business days',
@@ -151,6 +158,11 @@ function getLoanAmount(value: string) {
 function formatLoanAmountInput(value: string) {
   const loanAmount = getLoanAmount(value)
   return loanAmount > 0 ? numberFormatter.format(loanAmount) : ''
+}
+
+function getRequestedLtv(value: string) {
+  const parsed = Number(value.replace(/[^0-9.]/g, ''))
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 100) : 0
 }
 
 function getDistanceInMiles(
@@ -215,6 +227,7 @@ function getLocationVerification(search: SearchForm) {
 
 function rankLenders(search: SearchForm): RankedLender[] {
   const loanAmount = getLoanAmount(search.loanAmount)
+  const requestedLtv = getRequestedLtv(search.requestedLtv)
   const locationVerification = getLocationVerification(search)
 
   return lenders
@@ -235,6 +248,13 @@ function rankLenders(search: SearchForm): RankedLender[] {
       if (loanAmount >= lender.minAmount && loanAmount <= lender.maxAmount) {
         score += 16
         reasons.push(`Covers ${currencyFormatter.format(loanAmount)} requests`)
+      }
+
+      if (requestedLtv > 0 && requestedLtv <= lender.maxLtv) {
+        score += 10
+        reasons.push(`Supports ${requestedLtv}% requested LTV`)
+      } else if (requestedLtv > 0) {
+        reasons.push(`Verify LTV: ${requestedLtv}% requested exceeds ${lender.maxLtv}% stated max`)
       }
 
       if (lender.creditProfiles.includes(search.creditProfile)) {
@@ -324,6 +344,10 @@ export function App() {
                 <span>{currencyFormatter.format(getLoanAmount(form.loanAmount))}</span>
               </div>
               <div className="field">
+                <span>LTV:</span>
+                <span>{getRequestedLtv(form.requestedLtv)}%</span>
+              </div>
+              <div className="field">
                 <span>Property:</span>
                 <span>
                   {form.propertyCity}, {form.propertyState} {form.propertyZipCode}
@@ -392,6 +416,19 @@ export function App() {
                 onChange={(event) =>
                   updateField('loanAmount', event.target.value.replace(/[^0-9]/g, ''))
                 }
+              />
+            </label>
+
+            <label>
+              Requested Loan to Value (LTV%)
+              <input
+                inputMode="decimal"
+                max="100"
+                min="0"
+                step="0.1"
+                type="number"
+                value={form.requestedLtv}
+                onChange={(event) => updateField('requestedLtv', event.target.value)}
               />
             </label>
 
@@ -469,8 +506,9 @@ export function App() {
             <h2 id="matches-title">Best lender matches for this scenario</h2>
             <p>
               {rankedLenders.length} lenders scored for a {submittedSearch.propertyType}{' '}
-              {submittedSearch.loanType} request in {submittedSearch.propertyCity},{' '}
-              {submittedSearch.propertyState} {submittedSearch.propertyZipCode}.
+              {submittedSearch.loanType} request at {getRequestedLtv(submittedSearch.requestedLtv)}%
+              LTV in {submittedSearch.propertyCity}, {submittedSearch.propertyState}{' '}
+              {submittedSearch.propertyZipCode}.
             </p>
           </div>
 
