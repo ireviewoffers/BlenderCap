@@ -160,8 +160,8 @@ function formatLoanAmountInput(value: string) {
   return loanAmount > 0 ? numberFormatter.format(loanAmount) : ''
 }
 
-function getRequestedLtv(value: string) {
-  const parsed = Number(value.replace(/[^0-9.]/g, ''))
+function getRequestedLtv(value?: string) {
+  const parsed = Number((value ?? '').replace(/[^0-9.]/g, ''))
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 100) : 0
 }
 
