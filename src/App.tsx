@@ -93,9 +93,18 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
   currency: 'USD',
 })
 
+const numberFormatter = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 0,
+})
+
 function getLoanAmount(value: string) {
   const parsed = Number(value.replace(/[^0-9]/g, ''))
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function formatLoanAmountInput(value: string) {
+  const loanAmount = getLoanAmount(value)
+  return loanAmount > 0 ? numberFormatter.format(loanAmount) : ''
 }
 
 function rankLenders(search: SearchForm): RankedLender[] {
@@ -143,8 +152,9 @@ function rankLenders(search: SearchForm): RankedLender[] {
 export function App() {
   const [form, setForm] = useState<SearchForm>(defaultSearch)
   const [submittedSearch, setSubmittedSearch] = useState<SearchForm>(defaultSearch)
+  const previewLenders = useMemo(() => rankLenders(form), [form])
   const rankedLenders = useMemo(() => rankLenders(submittedSearch), [submittedSearch])
-  const topMatch = rankedLenders[0]
+  const topMatch = previewLenders[0]
 
   function updateField<Field extends keyof SearchForm>(field: Field, value: SearchForm[Field]) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -188,19 +198,19 @@ export function App() {
           </div>
 
           <aside className="match-card" aria-labelledby="preview-title">
-            <h2 id="preview-title">Current top match</h2>
+            <h2 id="preview-title">Live search preview</h2>
             <div className="scenario">
               <div className="field">
                 <span>Loan type</span>
-                <span>{submittedSearch.loanType}</span>
+                <span>{form.loanType}</span>
               </div>
               <div className="field">
                 <span>Loan amount</span>
-                <span>{currencyFormatter.format(getLoanAmount(submittedSearch.loanAmount))}</span>
+                <span>{currencyFormatter.format(getLoanAmount(form.loanAmount))}</span>
               </div>
               <div className="field">
                 <span>Target close</span>
-                <span>{submittedSearch.timeline}</span>
+                <span>{form.timeline}</span>
               </div>
             </div>
             {topMatch ? (
@@ -256,9 +266,11 @@ export function App() {
                 inputMode="numeric"
                 min="100000"
                 step="50000"
-                type="number"
-                value={form.loanAmount}
-                onChange={(event) => updateField('loanAmount', event.target.value)}
+                type="text"
+                value={formatLoanAmountInput(form.loanAmount)}
+                onChange={(event) =>
+                  updateField('loanAmount', event.target.value.replace(/[^0-9]/g, ''))
+                }
               />
             </label>
 
@@ -299,8 +311,8 @@ export function App() {
             <p className="eyebrow">Ranked results</p>
             <h2 id="matches-title">Best lender matches for this scenario</h2>
             <p>
-              {rankedLenders.length} lenders scored for a {submittedSearch.propertyType.toLowerCase()}{' '}
-              {submittedSearch.loanType.toLowerCase()} request.
+              {rankedLenders.length} lenders scored for a {submittedSearch.propertyType}{' '}
+              {submittedSearch.loanType} request.
             </p>
           </div>
 
@@ -321,7 +333,12 @@ export function App() {
                     )}
                   </ul>
                 </div>
-                <a className="button button-secondary" href={`mailto:quotes@blendercap.com?subject=${encodeURIComponent(`Scenario for ${lender.name}`)}`}>
+                <a
+                  className="button button-secondary"
+                  href={`mailto:quotes@blendercap.com?subject=${encodeURIComponent(
+                    `Scenario for ${lender.name}`,
+                  )}`}
+                >
                   Request quote
                 </a>
               </article>
