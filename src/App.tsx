@@ -9,7 +9,11 @@ type Timeline = '14 days' | '21 days' | '30+ days'
 type SearchForm = {
   loanType: LoanType
   propertyType: PropertyType
+  propertyCity: string
+  propertyState: string
+  propertyZipCode: string
   loanAmount: string
+  requestedLtv: string
   creditScore: string
   timeline: Timeline
 }
@@ -20,6 +24,7 @@ type Lender = {
   propertyTypes: PropertyType[]
   minAmount: number
   maxAmount: number
+  maxLtv: number
   minCreditScore: number
   timelines: Timeline[]
   responseTime: string
@@ -31,10 +36,30 @@ type RankedLender = Lender & {
   reasons: string[]
 }
 
+type PopulationArea = {
+  city: string
+  state: string
+  population: number
+  latitude: number
+  longitude: number
+}
+
+type KnownPropertyLocation = {
+  city: string
+  state: string
+  zipCode: string
+  latitude: number
+  longitude: number
+}
+
 const defaultSearch: SearchForm = {
   loanType: 'Bridge',
   propertyType: 'Mixed-use',
+  propertyCity: 'Booneville',
+  propertyState: 'KY',
+  propertyZipCode: '41314',
   loanAmount: '2400000',
+  requestedLtv: '68',
   creditScore: '680',
   timeline: '21 days',
 }
@@ -46,6 +71,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Mixed-use', 'Retail', 'Multifamily'],
     minAmount: 750000,
     maxAmount: 12000000,
+    maxLtv: 75,
     minCreditScore: 580,
     timelines: ['14 days', '21 days'],
     responseTime: '24 hrs',
@@ -57,6 +83,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Residential', 'Multifamily'],
     minAmount: 250000,
     maxAmount: 5000000,
+    maxLtv: 80,
     minCreditScore: 620,
     timelines: ['21 days', '30+ days'],
     responseTime: 'Same day',
@@ -68,6 +95,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Residential', 'Mixed-use', 'Multifamily'],
     minAmount: 150000,
     maxAmount: 3500000,
+    maxLtv: 70,
     minCreditScore: 500,
     timelines: ['14 days', '21 days'],
     responseTime: '48 hrs',
@@ -79,6 +107,7 @@ const lenders: Lender[] = [
     propertyTypes: ['Retail', 'Mixed-use', 'Multifamily'],
     minAmount: 1000000,
     maxAmount: 20000000,
+    maxLtv: 65,
     minCreditScore: 720,
     timelines: ['30+ days'],
     responseTime: '2 business days',
@@ -96,6 +125,30 @@ const numberFormatter = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 0,
 })
 
+const populatedAreas: PopulationArea[] = [
+  { city: 'Los Angeles', state: 'CA', population: 3820914, latitude: 34.0522, longitude: -118.2437 },
+  { city: 'New York', state: 'NY', population: 8258035, latitude: 40.7128, longitude: -74.006 },
+  { city: 'Chicago', state: 'IL', population: 2664452, latitude: 41.8781, longitude: -87.6298 },
+  { city: 'Houston', state: 'TX', population: 2314157, latitude: 29.7604, longitude: -95.3698 },
+  { city: 'Phoenix', state: 'AZ', population: 1650070, latitude: 33.4484, longitude: -112.074 },
+  { city: 'Philadelphia', state: 'PA', population: 1550542, latitude: 39.9526, longitude: -75.1652 },
+  { city: 'Miami', state: 'FL', population: 455924, latitude: 25.7617, longitude: -80.1918 },
+  { city: 'Atlanta', state: 'GA', population: 510823, latitude: 33.749, longitude: -84.388 },
+  { city: 'Denver', state: 'CO', population: 715522, latitude: 39.7392, longitude: -104.9903 },
+  { city: 'Seattle', state: 'WA', population: 755078, latitude: 47.6062, longitude: -122.3321 },
+  { city: 'Austin', state: 'TX', population: 979882, latitude: 30.2672, longitude: -97.7431 },
+  { city: 'Nashville', state: 'TN', population: 689447, latitude: 36.1627, longitude: -86.7816 },
+  { city: 'Raleigh', state: 'NC', population: 476587, latitude: 35.7796, longitude: -78.6382 },
+  { city: 'Bakersfield', state: 'CA', population: 410647, latitude: 35.3733, longitude: -119.0187 },
+]
+
+const knownPropertyLocations: KnownPropertyLocation[] = [
+  { city: 'Booneville', state: 'KY', zipCode: '41314', latitude: 37.4762, longitude: -83.6746 },
+  { city: 'Austin', state: 'TX', zipCode: '78701', latitude: 30.2711, longitude: -97.7437 },
+  { city: 'Bakersfield', state: 'CA', zipCode: '93301', latitude: 35.3733, longitude: -119.0187 },
+  { city: 'Miami', state: 'FL', zipCode: '33131', latitude: 25.7644, longitude: -80.1893 },
+]
+
 function getLoanAmount(value: string) {
   const parsed = Number(value.replace(/[^0-9]/g, ''))
   return Number.isFinite(parsed) ? parsed : 0
@@ -104,6 +157,11 @@ function getLoanAmount(value: string) {
 function formatLoanAmountInput(value: string) {
   const loanAmount = getLoanAmount(value)
   return loanAmount > 0 ? numberFormatter.format(loanAmount) : ''
+}
+
+function getRequestedLtv(value?: string) {
+  const parsed = Number((value ?? '').replace(/[^0-9.]/g, ''))
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 100) : 0
 }
 
 function getCreditScore(value: string) {
@@ -125,9 +183,71 @@ function getCreditScoreError(value: string) {
   return ''
 }
 
+function getDistanceInMiles(
+  first: Pick<KnownPropertyLocation, 'latitude' | 'longitude'>,
+  second: Pick<PopulationArea, 'latitude' | 'longitude'>,
+) {
+  const earthRadiusMiles = 3958.8
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180
+  const latitudeDelta = toRadians(second.latitude - first.latitude)
+  const longitudeDelta = toRadians(second.longitude - first.longitude)
+  const firstLatitude = toRadians(first.latitude)
+  const secondLatitude = toRadians(second.latitude)
+  const angle =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2
+
+  return earthRadiusMiles * 2 * Math.atan2(Math.sqrt(angle), Math.sqrt(1 - angle))
+}
+
+function getKnownPropertyLocation(search: SearchForm) {
+  const normalizedCity = search.propertyCity.trim().toLowerCase()
+  const normalizedState = search.propertyState.trim().toUpperCase()
+  const normalizedZipCode = search.propertyZipCode.replace(/[^0-9]/g, '')
+
+  return knownPropertyLocations.find((location) => {
+    const cityMatches = location.city.toLowerCase() === normalizedCity
+    const stateMatches = location.state === normalizedState
+    const zipMatches = location.zipCode === normalizedZipCode
+
+    return (cityMatches && stateMatches) || zipMatches
+  })
+}
+
+function getLocationVerification(search: SearchForm) {
+  const propertyLocation = getKnownPropertyLocation(search)
+  const locationLabel =
+    [search.propertyCity.trim(), search.propertyState.trim().toUpperCase()]
+      .filter(Boolean)
+      .join(', ') || 'the property city'
+
+  if (!propertyLocation) {
+    return `Verify location manually: ${locationLabel} is not in the demo proximity dataset for 10,000+ population areas.`
+  }
+
+  const nearestArea = populatedAreas
+    .map((area) => ({
+      ...area,
+      distance: getDistanceInMiles(propertyLocation, area),
+    }))
+    .sort((a, b) => a.distance - b.distance)[0]
+
+  if (!nearestArea || nearestArea.population <= 10000 || nearestArea.distance > 20) {
+    const nearestLabel = nearestArea
+      ? `${nearestArea.city}, ${nearestArea.state} (${Math.round(nearestArea.distance)} miles away)`
+      : 'no qualifying populated area'
+
+    return `Verify with user: ${locationLabel} appears outside 20 miles of a 10,000+ population area; nearest demo match is ${nearestLabel}.`
+  }
+
+  return null
+}
+
 function rankLenders(search: SearchForm): RankedLender[] {
   const loanAmount = getLoanAmount(search.loanAmount)
+  const requestedLtv = getRequestedLtv(search.requestedLtv)
   const creditScore = getCreditScore(search.creditScore)
+  const locationVerification = getLocationVerification(search)
 
   return lenders
     .map((lender) => {
@@ -149,6 +269,13 @@ function rankLenders(search: SearchForm): RankedLender[] {
         reasons.push(`Covers ${currencyFormatter.format(loanAmount)} requests`)
       }
 
+      if (requestedLtv > 0 && requestedLtv <= lender.maxLtv) {
+        score += 10
+        reasons.push(`Supports ${requestedLtv}% requested LTV`)
+      } else if (requestedLtv > 0) {
+        reasons.push(`Verify LTV: ${requestedLtv}% requested exceeds ${lender.maxLtv}% stated max`)
+      }
+
       if (creditScore !== null && creditScore >= lender.minCreditScore) {
         score += 12
         reasons.push(`${creditScore} credit score meets ${lender.minCreditScore} minimum`)
@@ -160,6 +287,10 @@ function rankLenders(search: SearchForm): RankedLender[] {
       if (lender.timelines.includes(search.timeline)) {
         score += 10
         reasons.push(`Can work toward a ${search.timeline} close`)
+      }
+
+      if (locationVerification) {
+        reasons.push(locationVerification)
       }
 
       return {
@@ -177,6 +308,10 @@ export function App() {
   const creditScoreError = getCreditScoreError(form.creditScore)
   const previewLenders = useMemo(() => rankLenders(form), [form])
   const rankedLenders = useMemo(() => rankLenders(submittedSearch), [submittedSearch])
+  const submittedLocationVerification = useMemo(
+    () => getLocationVerification(submittedSearch),
+    [submittedSearch],
+  )
   const topMatch = previewLenders[0]
 
   function updateField<Field extends keyof SearchForm>(field: Field, value: SearchForm[Field]) {
@@ -235,6 +370,16 @@ export function App() {
               <div className="field">
                 <span>Loan amount:</span>
                 <span>{currencyFormatter.format(getLoanAmount(form.loanAmount))}</span>
+              </div>
+              <div className="field">
+                <span>LTV:</span>
+                <span>{getRequestedLtv(form.requestedLtv)}%</span>
+              </div>
+              <div className="field">
+                <span>Property:</span>
+                <span>
+                  {form.propertyCity}, {form.propertyState} {form.propertyZipCode}
+                </span>
               </div>
               <div className="field">
                 <span>Target close:</span>
@@ -303,6 +448,55 @@ export function App() {
             </label>
 
             <label>
+              Requested Loan to Value (LTV%)
+              <input
+                inputMode="decimal"
+                max="100"
+                min="0"
+                step="0.1"
+                type="number"
+                value={form.requestedLtv}
+                onChange={(event) => updateField('requestedLtv', event.target.value)}
+              />
+            </label>
+
+            <label>
+              Property city
+              <input
+                autoComplete="address-level2"
+                type="text"
+                value={form.propertyCity}
+                onChange={(event) => updateField('propertyCity', event.target.value)}
+              />
+            </label>
+
+            <label>
+              Property state
+              <input
+                autoComplete="address-level1"
+                maxLength={2}
+                type="text"
+                value={form.propertyState}
+                onChange={(event) => updateField('propertyState', event.target.value.toUpperCase())}
+              />
+            </label>
+
+            <label>
+              Property Zip Code
+              <input
+                autoComplete="postal-code"
+                inputMode="numeric"
+                maxLength={5}
+                pattern="[0-9]{5}"
+                type="text"
+                value={form.propertyZipCode}
+                onChange={(event) =>
+                  updateField('propertyZipCode', event.target.value.replace(/[^0-9]/g, ''))
+                }
+              />
+            </label>
+
+            <label>
               Credit profile
               <input
                 aria-describedby="credit-score-hint"
@@ -347,9 +541,17 @@ export function App() {
             <h2 id="matches-title">Best lender matches for this scenario</h2>
             <p>
               {rankedLenders.length} lenders scored for a {submittedSearch.propertyType}{' '}
-              {submittedSearch.loanType} request.
+              {submittedSearch.loanType} request at {getRequestedLtv(submittedSearch.requestedLtv)}%
+              LTV in {submittedSearch.propertyCity}, {submittedSearch.propertyState}{' '}
+              {submittedSearch.propertyZipCode}.
             </p>
           </div>
+
+          {submittedLocationVerification ? (
+            <div className="verification-alert" role="status">
+              {submittedLocationVerification}
+            </div>
+          ) : null}
 
           <div className="results-list">
             {rankedLenders.map((lender) => (

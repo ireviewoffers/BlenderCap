@@ -446,6 +446,17 @@ button {
   font-weight: 900;
 }
 
+.verification-alert {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgb(151 77 24 / 18%);
+  border-radius: 18px;
+  color: #7a3b12;
+  background: #fff3df;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
 .results-list {
   display: grid;
   gap: 14px;
