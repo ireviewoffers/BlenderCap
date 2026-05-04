@@ -332,6 +332,21 @@ button {
   box-shadow: 0 0 0 4px rgb(76 157 104 / 14%);
 }
 
+.search-form input:invalid {
+  border-color: #c65c42;
+}
+
+.field-hint,
+.field-error {
+  color: #677488;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.field-error {
+  color: #b84a34;
+}
+
 .search-form button {
   grid-column: 1 / -1;
 }
