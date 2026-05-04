@@ -4,7 +4,6 @@ import './App.css'
 
 type LoanType = 'Bridge' | 'DSCR' | 'Fix & flip' | 'Construction'
 type PropertyType = 'Residential' | 'Mixed-use' | 'Multifamily' | 'Retail'
-type CreditProfile = 'Prime' | 'Near prime' | 'Flexible'
 type Timeline = '14 days' | '21 days' | '30+ days'
 
 type SearchForm = {
@@ -15,7 +14,7 @@ type SearchForm = {
   propertyZipCode: string
   loanAmount: string
   requestedLtv: string
-  creditProfile: CreditProfile
+  creditScore: string
   timeline: Timeline
 }
 
@@ -26,7 +25,7 @@ type Lender = {
   minAmount: number
   maxAmount: number
   maxLtv: number
-  creditProfiles: CreditProfile[]
+  minCreditScore: number
   timelines: Timeline[]
   responseTime: string
   note: string
@@ -61,7 +60,7 @@ const defaultSearch: SearchForm = {
   propertyZipCode: '41314',
   loanAmount: '2400000',
   requestedLtv: '68',
-  creditProfile: 'Near prime',
+  creditScore: '680',
   timeline: '21 days',
 }
 
@@ -73,7 +72,7 @@ const lenders: Lender[] = [
     minAmount: 750000,
     maxAmount: 12000000,
     maxLtv: 75,
-    creditProfiles: ['Prime', 'Near prime', 'Flexible'],
+    minCreditScore: 580,
     timelines: ['14 days', '21 days'],
     responseTime: '24 hrs',
     note: 'Strong fit for transitional commercial collateral and fast term sheets.',
@@ -85,7 +84,7 @@ const lenders: Lender[] = [
     minAmount: 250000,
     maxAmount: 5000000,
     maxLtv: 80,
-    creditProfiles: ['Prime', 'Near prime'],
+    minCreditScore: 620,
     timelines: ['21 days', '30+ days'],
     responseTime: 'Same day',
     note: 'Best for investor residential scenarios with predictable rental income.',
@@ -97,7 +96,7 @@ const lenders: Lender[] = [
     minAmount: 150000,
     maxAmount: 3500000,
     maxLtv: 70,
-    creditProfiles: ['Near prime', 'Flexible'],
+    minCreditScore: 500,
     timelines: ['14 days', '21 days'],
     responseTime: '48 hrs',
     note: 'Flexible on credit when the exit strategy and renovation plan are clear.',
@@ -109,7 +108,7 @@ const lenders: Lender[] = [
     minAmount: 1000000,
     maxAmount: 20000000,
     maxLtv: 65,
-    creditProfiles: ['Prime'],
+    minCreditScore: 720,
     timelines: ['30+ days'],
     responseTime: '2 business days',
     note: 'Competitive pricing for stronger sponsors with more complete packages.',
@@ -163,6 +162,25 @@ function formatLoanAmountInput(value: string) {
 function getRequestedLtv(value?: string) {
   const parsed = Number((value ?? '').replace(/[^0-9.]/g, ''))
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 100) : 0
+}
+
+function getCreditScore(value: string) {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) ? parsed : null
+}
+
+function getCreditScoreError(value: string) {
+  const creditScore = getCreditScore(value)
+
+  if (creditScore === null) {
+    return 'Enter a credit score between 500 and 850.'
+  }
+
+  if (creditScore < 500 || creditScore > 850) {
+    return 'Credit score must be between 500 and 850.'
+  }
+
+  return ''
 }
 
 function getDistanceInMiles(
@@ -228,6 +246,7 @@ function getLocationVerification(search: SearchForm) {
 function rankLenders(search: SearchForm): RankedLender[] {
   const loanAmount = getLoanAmount(search.loanAmount)
   const requestedLtv = getRequestedLtv(search.requestedLtv)
+  const creditScore = getCreditScore(search.creditScore)
   const locationVerification = getLocationVerification(search)
 
   return lenders
@@ -257,9 +276,12 @@ function rankLenders(search: SearchForm): RankedLender[] {
         reasons.push(`Verify LTV: ${requestedLtv}% requested exceeds ${lender.maxLtv}% stated max`)
       }
 
-      if (lender.creditProfiles.includes(search.creditProfile)) {
+      if (creditScore !== null && creditScore >= lender.minCreditScore) {
         score += 12
-        reasons.push(`${search.creditProfile} credit accepted`)
+        reasons.push(`${creditScore} credit score meets ${lender.minCreditScore} minimum`)
+      } else if (creditScore !== null) {
+        score -= 8
+        reasons.push(`${creditScore} credit score is below ${lender.minCreditScore} minimum`)
       }
 
       if (lender.timelines.includes(search.timeline)) {
@@ -283,6 +305,7 @@ function rankLenders(search: SearchForm): RankedLender[] {
 export function App() {
   const [form, setForm] = useState<SearchForm>(defaultSearch)
   const [submittedSearch, setSubmittedSearch] = useState<SearchForm>(defaultSearch)
+  const creditScoreError = getCreditScoreError(form.creditScore)
   const previewLenders = useMemo(() => rankLenders(form), [form])
   const rankedLenders = useMemo(() => rankLenders(submittedSearch), [submittedSearch])
   const submittedLocationVerification = useMemo(
@@ -297,6 +320,11 @@ export function App() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    if (creditScoreError) {
+      return
+    }
+
     setSubmittedSearch(form)
   }
 
@@ -470,16 +498,23 @@ export function App() {
 
             <label>
               Credit profile
-              <select
-                value={form.creditProfile}
+              <input
+                aria-describedby="credit-score-hint"
+                aria-invalid={creditScoreError ? 'true' : 'false'}
+                inputMode="numeric"
+                max="850"
+                maxLength={3}
+                min="500"
+                placeholder="680"
+                type="number"
+                value={form.creditScore}
                 onChange={(event) =>
-                  updateField('creditProfile', event.target.value as CreditProfile)
+                  updateField('creditScore', event.target.value.replace(/[^0-9]/g, '').slice(0, 3))
                 }
-              >
-                <option>Prime</option>
-                <option>Near prime</option>
-                <option>Flexible</option>
-              </select>
+              />
+              <span className={creditScoreError ? 'field-error' : 'field-hint'} id="credit-score-hint">
+                {creditScoreError || 'Enter a score from 500 to 850.'}
+              </span>
             </label>
 
             <label>
