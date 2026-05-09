@@ -36,6 +36,19 @@ type RankedLender = Lender & {
   reasons: string[]
 }
 
+type LenderCriteriaForm = {
+  loanTypes: LoanType[]
+  propertyTypes: PropertyType[]
+  minLoanAmount: string
+  maxLoanAmount: string
+  maxLtv: string
+  minCreditScore: string
+  propertyCity: string
+  propertyState: string
+  propertyZipCode: string
+  timelines: Timeline[]
+}
+
 type PopulationArea = {
   city: string
   state: string
@@ -52,6 +65,10 @@ type KnownPropertyLocation = {
   longitude: number
 }
 
+const loanTypeOptions: LoanType[] = ['Bridge', 'DSCR', 'Fix & flip', 'Construction']
+const propertyTypeOptions: PropertyType[] = ['Residential', 'Mixed-use', 'Multifamily', 'Retail']
+const timelineOptions: Timeline[] = ['14 days', '21 days', '30+ days']
+
 const defaultSearch: SearchForm = {
   loanType: 'Bridge',
   propertyType: 'Mixed-use',
@@ -62,6 +79,19 @@ const defaultSearch: SearchForm = {
   requestedLtv: '68',
   creditScore: '680',
   timeline: '21 days',
+}
+
+const defaultLenderCriteria: LenderCriteriaForm = {
+  loanTypes: ['Bridge'],
+  propertyTypes: ['Mixed-use'],
+  minLoanAmount: '250000',
+  maxLoanAmount: '5000000',
+  maxLtv: '75',
+  minCreditScore: '620',
+  propertyCity: 'Booneville',
+  propertyState: 'KY',
+  propertyZipCode: '41314',
+  timelines: ['21 days'],
 }
 
 const lenders: Lender[] = [
@@ -178,6 +208,47 @@ function getCreditScoreError(value: string) {
 
   if (creditScore < 500 || creditScore > 850) {
     return 'Credit score must be between 500 and 850.'
+  }
+
+  return ''
+}
+
+function getLenderCriteriaError(criteria: LenderCriteriaForm) {
+  const minLoanAmount = getLoanAmount(criteria.minLoanAmount)
+  const maxLoanAmount = getLoanAmount(criteria.maxLoanAmount)
+  const maxLtv = getRequestedLtv(criteria.maxLtv)
+  const creditScoreError = getCreditScoreError(criteria.minCreditScore)
+
+  if (criteria.loanTypes.length === 0) {
+    return 'Choose at least one loan type.'
+  }
+
+  if (criteria.propertyTypes.length === 0) {
+    return 'Choose at least one property type.'
+  }
+
+  if (minLoanAmount <= 0 || maxLoanAmount <= 0 || minLoanAmount > maxLoanAmount) {
+    return 'Enter a valid minimum and maximum loan amount.'
+  }
+
+  if (maxLtv <= 0) {
+    return 'Enter a maximum LTV greater than 0%.'
+  }
+
+  if (creditScoreError) {
+    return creditScoreError
+  }
+
+  if (criteria.timelines.length === 0) {
+    return 'Choose at least one target close timeline.'
+  }
+
+  if (!criteria.propertyCity.trim() || criteria.propertyState.trim().length !== 2) {
+    return 'Enter a property city and two-letter state.'
+  }
+
+  if (criteria.propertyZipCode.replace(/[^0-9]/g, '').length !== 5) {
+    return 'Enter a five-digit ZIP code.'
   }
 
   return ''
@@ -303,6 +374,16 @@ function rankLenders(search: SearchForm): RankedLender[] {
 }
 
 export function App() {
+  const isOnboardingPage = window.location.pathname.replace(/\/$/, '') === '/lender-onboarding'
+
+  if (isOnboardingPage) {
+    return <LenderOnboardingPage />
+  }
+
+  return <BrokerSearchPage />
+}
+
+function BrokerSearchPage() {
   const [form, setForm] = useState<SearchForm>(defaultSearch)
   const [submittedSearch, setSubmittedSearch] = useState<SearchForm>(defaultSearch)
   const creditScoreError = getCreditScoreError(form.creditScore)
@@ -413,10 +494,9 @@ export function App() {
                 value={form.loanType}
                 onChange={(event) => updateField('loanType', event.target.value as LoanType)}
               >
-                <option>Bridge</option>
-                <option>DSCR</option>
-                <option>Fix &amp; flip</option>
-                <option>Construction</option>
+                {loanTypeOptions.map((loanType) => (
+                  <option key={loanType}>{loanType}</option>
+                ))}
               </select>
             </label>
 
@@ -426,10 +506,9 @@ export function App() {
                 value={form.propertyType}
                 onChange={(event) => updateField('propertyType', event.target.value as PropertyType)}
               >
-                <option>Residential</option>
-                <option>Mixed-use</option>
-                <option>Multifamily</option>
-                <option>Retail</option>
+                {propertyTypeOptions.map((propertyType) => (
+                  <option key={propertyType}>{propertyType}</option>
+                ))}
               </select>
             </label>
 
@@ -523,9 +602,9 @@ export function App() {
                 value={form.timeline}
                 onChange={(event) => updateField('timeline', event.target.value as Timeline)}
               >
-                <option>14 days</option>
-                <option>21 days</option>
-                <option>30+ days</option>
+                {timelineOptions.map((timeline) => (
+                  <option key={timeline}>{timeline}</option>
+                ))}
               </select>
             </label>
 
@@ -599,5 +678,370 @@ export function App() {
         </div>
       </section>
     </main>
+  )
+}
+
+function LenderOnboardingPage() {
+  const [criteria, setCriteria] = useState<LenderCriteriaForm>(defaultLenderCriteria)
+  const [stepIndex, setStepIndex] = useState(0)
+  const [submissionId, setSubmissionId] = useState('')
+  const [formError, setFormError] = useState('')
+  const totalSteps = 3
+  const isFinalStep = stepIndex === totalSteps - 1
+
+  function updateCriteria<Field extends keyof LenderCriteriaForm>(
+    field: Field,
+    value: LenderCriteriaForm[Field],
+  ) {
+    setCriteria((current) => ({ ...current, [field]: value }))
+  }
+
+  function toggleCriteriaList<Field extends 'loanTypes' | 'propertyTypes' | 'timelines'>(
+    field: Field,
+    value: LenderCriteriaForm[Field][number],
+  ) {
+    setCriteria((current) => {
+      const currentValues = current[field]
+      const nextValues = currentValues.includes(value as never)
+        ? currentValues.filter((item) => item !== value)
+        : [...currentValues, value]
+
+      return { ...current, [field]: nextValues }
+    })
+  }
+
+  function persistCriteria(nextCriteria: LenderCriteriaForm) {
+    const id = `criteria-${Date.now()}`
+    const payload = {
+      id,
+      createdAt: new Date().toISOString(),
+      criteria: {
+        ...nextCriteria,
+        minLoanAmount: getLoanAmount(nextCriteria.minLoanAmount),
+        maxLoanAmount: getLoanAmount(nextCriteria.maxLoanAmount),
+        maxLtv: getRequestedLtv(nextCriteria.maxLtv),
+        minCreditScore: getCreditScore(nextCriteria.minCreditScore),
+        propertyState: nextCriteria.propertyState.trim().toUpperCase(),
+        propertyZipCode: nextCriteria.propertyZipCode.replace(/[^0-9]/g, ''),
+      },
+    }
+    const storageKey = 'blender-cap.lender-criteria'
+    const existingRecords = JSON.parse(window.localStorage.getItem(storageKey) ?? '[]')
+    window.localStorage.setItem(storageKey, JSON.stringify([...existingRecords, payload]))
+    setSubmissionId(id)
+  }
+
+  function handleNext() {
+    setFormError('')
+
+    if (isFinalStep) {
+      const error = getLenderCriteriaError(criteria)
+
+      if (error) {
+        setFormError(error)
+        return
+      }
+
+      persistCriteria(criteria)
+      return
+    }
+
+    setStepIndex((current) => Math.min(current + 1, totalSteps - 1))
+  }
+
+  function handleBack() {
+    setFormError('')
+    setStepIndex((current) => Math.max(current - 1, 0))
+  }
+
+  return (
+    <main className="app-shell onboarding-shell">
+      <section className="onboarding-page" aria-labelledby="onboarding-title">
+        <nav className="nav" aria-label="Onboarding navigation">
+          <a className="brand" href="/">
+            <span className="brand-mark">B</span>
+            <span>Blender Cap</span>
+          </a>
+          <span className="hidden-page-pill">Hidden lender intake</span>
+        </nav>
+
+        <div className="onboarding-layout">
+          <aside className="onboarding-intro">
+            <p className="eyebrow">Criteria onboarding</p>
+            <h1 id="onboarding-title">Add lender criteria to the database queue.</h1>
+            <p>
+              Answer the same criteria used by broker search so lender appetite can be structured for
+              matching. Each step keeps intake to three questions or fewer.
+            </p>
+            <ol className="step-list" aria-label="Onboarding progress">
+              {['Programs', 'Credit box', 'Geography'].map((label, index) => (
+                <li className={index === stepIndex ? 'active-step' : ''} key={label}>
+                  <span>{index + 1}</span>
+                  {label}
+                </li>
+              ))}
+            </ol>
+          </aside>
+
+          <section className="criteria-card" aria-live="polite">
+            {submissionId ? (
+              <Confirmation criteria={criteria} submissionId={submissionId} />
+            ) : (
+              <>
+                <div className="criteria-header">
+                  <span>
+                    Step {stepIndex + 1} of {totalSteps}
+                  </span>
+                  <strong>{isFinalStep ? 'Last page' : '3 questions max'}</strong>
+                </div>
+
+                <form className="criteria-form" onSubmit={(event) => event.preventDefault()}>
+                  {stepIndex === 0 ? (
+                    <>
+                      <CheckboxGroup
+                        label="Which loan types does this lender fund?"
+                        options={loanTypeOptions}
+                        selectedOptions={criteria.loanTypes}
+                        onChange={(loanType) => toggleCriteriaList('loanTypes', loanType)}
+                      />
+                      <CheckboxGroup
+                        label="Which property types are eligible?"
+                        options={propertyTypeOptions}
+                        selectedOptions={criteria.propertyTypes}
+                        onChange={(propertyType) => toggleCriteriaList('propertyTypes', propertyType)}
+                      />
+                      <fieldset className="criteria-question">
+                        <legend>What loan amount range should be stored?</legend>
+                        <div className="split-fields">
+                          <label>
+                            Minimum
+                            <input
+                              inputMode="numeric"
+                              type="text"
+                              value={formatLoanAmountInput(criteria.minLoanAmount)}
+                              onChange={(event) =>
+                                updateCriteria(
+                                  'minLoanAmount',
+                                  event.target.value.replace(/[^0-9]/g, ''),
+                                )
+                              }
+                            />
+                          </label>
+                          <label>
+                            Maximum
+                            <input
+                              inputMode="numeric"
+                              type="text"
+                              value={formatLoanAmountInput(criteria.maxLoanAmount)}
+                              onChange={(event) =>
+                                updateCriteria(
+                                  'maxLoanAmount',
+                                  event.target.value.replace(/[^0-9]/g, ''),
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                      </fieldset>
+                    </>
+                  ) : null}
+
+                  {stepIndex === 1 ? (
+                    <>
+                      <label className="criteria-question">
+                        Maximum Loan to Value (LTV%)
+                        <input
+                          inputMode="decimal"
+                          max="100"
+                          min="0"
+                          type="number"
+                          value={criteria.maxLtv}
+                          onChange={(event) => updateCriteria('maxLtv', event.target.value)}
+                        />
+                      </label>
+                      <label className="criteria-question">
+                        Minimum borrower credit score
+                        <input
+                          inputMode="numeric"
+                          max="850"
+                          maxLength={3}
+                          min="500"
+                          type="number"
+                          value={criteria.minCreditScore}
+                          onChange={(event) =>
+                            updateCriteria(
+                              'minCreditScore',
+                              event.target.value.replace(/[^0-9]/g, '').slice(0, 3),
+                            )
+                          }
+                        />
+                      </label>
+                      <CheckboxGroup
+                        label="Which target close timelines can this lender support?"
+                        options={timelineOptions}
+                        selectedOptions={criteria.timelines}
+                        onChange={(timeline) => toggleCriteriaList('timelines', timeline)}
+                      />
+                    </>
+                  ) : null}
+
+                  {stepIndex === 2 ? (
+                    <>
+                      <label className="criteria-question">
+                        Eligible property city
+                        <input
+                          autoComplete="address-level2"
+                          type="text"
+                          value={criteria.propertyCity}
+                          onChange={(event) => updateCriteria('propertyCity', event.target.value)}
+                        />
+                      </label>
+                      <label className="criteria-question">
+                        Eligible property state
+                        <input
+                          autoComplete="address-level1"
+                          maxLength={2}
+                          type="text"
+                          value={criteria.propertyState}
+                          onChange={(event) =>
+                            updateCriteria('propertyState', event.target.value.toUpperCase())
+                          }
+                        />
+                      </label>
+                      <label className="criteria-question">
+                        Eligible property ZIP code
+                        <input
+                          autoComplete="postal-code"
+                          inputMode="numeric"
+                          maxLength={5}
+                          pattern="[0-9]{5}"
+                          type="text"
+                          value={criteria.propertyZipCode}
+                          onChange={(event) =>
+                            updateCriteria(
+                              'propertyZipCode',
+                              event.target.value.replace(/[^0-9]/g, ''),
+                            )
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : null}
+
+                  {formError ? (
+                    <div className="verification-alert" role="alert">
+                      {formError}
+                    </div>
+                  ) : null}
+
+                  <div className="criteria-actions">
+                    <button
+                      className="button button-secondary"
+                      disabled={stepIndex === 0}
+                      onClick={handleBack}
+                      type="button"
+                    >
+                      Back
+                    </button>
+                    <button className="button button-primary" onClick={handleNext} type="button">
+                      {isFinalStep ? 'Save criteria' : 'Next'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </section>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+type CheckboxGroupProps<Option extends string> = {
+  label: string
+  options: Option[]
+  selectedOptions: Option[]
+  onChange: (option: Option) => void
+}
+
+function CheckboxGroup<Option extends string>({
+  label,
+  options,
+  selectedOptions,
+  onChange,
+}: CheckboxGroupProps<Option>) {
+  return (
+    <fieldset className="criteria-question checkbox-question">
+      <legend>{label}</legend>
+      <div className="option-grid">
+        {options.map((option) => (
+          <label key={option}>
+            <input
+              checked={selectedOptions.includes(option)}
+              onChange={() => onChange(option)}
+              type="checkbox"
+            />
+            <span>{option}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
+function Confirmation({
+  criteria,
+  submissionId,
+}: {
+  criteria: LenderCriteriaForm
+  submissionId: string
+}) {
+  return (
+    <div className="confirmation-panel">
+      <p className="eyebrow">Saved locally</p>
+      <h2>Criteria queued for database onboarding.</h2>
+      <p>
+        Submission <strong>{submissionId}</strong> is stored in the browser onboarding queue and is
+        ready for a backend database handoff.
+      </p>
+      <div className="criteria-summary">
+        <div>
+          <span>Loan types</span>
+          <strong>{criteria.loanTypes.join(', ')}</strong>
+        </div>
+        <div>
+          <span>Property types</span>
+          <strong>{criteria.propertyTypes.join(', ')}</strong>
+        </div>
+        <div>
+          <span>Loan range</span>
+          <strong>
+            {currencyFormatter.format(getLoanAmount(criteria.minLoanAmount))} -{' '}
+            {currencyFormatter.format(getLoanAmount(criteria.maxLoanAmount))}
+          </strong>
+        </div>
+        <div>
+          <span>Max LTV</span>
+          <strong>{getRequestedLtv(criteria.maxLtv)}%</strong>
+        </div>
+        <div>
+          <span>Minimum credit</span>
+          <strong>{criteria.minCreditScore}</strong>
+        </div>
+        <div>
+          <span>Target close</span>
+          <strong>{criteria.timelines.join(', ')}</strong>
+        </div>
+        <div>
+          <span>Eligible area</span>
+          <strong>
+            {criteria.propertyCity}, {criteria.propertyState} {criteria.propertyZipCode}
+          </strong>
+        </div>
+      </div>
+      <a className="button button-secondary" href="/">
+        Return to search
+      </a>
+    </div>
   )
 }
