@@ -29,6 +29,14 @@ type Lender = {
   timelines: Timeline[]
   responseTime: string
   note: string
+  guidelineDocument?: {
+    title: string
+    effectiveDate: string
+    href: string
+  }
+  searchCriteria?: string[]
+  excludedStates?: string[]
+  entityOnlyStates?: string[]
 }
 
 type RankedLender = Lender & {
@@ -112,6 +120,32 @@ const lenders: Lender[] = [
     timelines: ['30+ days'],
     responseTime: '2 business days',
     note: 'Competitive pricing for stronger sponsors with more complete packages.',
+  },
+  {
+    name: 'Constructive Capital',
+    specialties: ['DSCR'],
+    propertyTypes: ['Residential', 'Multifamily'],
+    minAmount: 50000,
+    maxAmount: 2000000,
+    maxLtv: 80,
+    minCreditScore: 660,
+    timelines: ['21 days', '30+ days'],
+    responseTime: 'Broker guide',
+    note: 'DSCR rental purchase and refinance programs for non-owner-occupied residential investment properties.',
+    guidelineDocument: {
+      title: 'DSCR Underwriting Guide External/Broker',
+      effectiveDate: '5/1/2025',
+      href: '/lender-guidelines/constructive-capital-dscr-underwriting-guide-effective-2025-05-01.pdf',
+    },
+    searchCriteria: [
+      'Purchase, delayed purchase, rate/term refinance, and cash-out refinance DSCR scenarios.',
+      'Loan amounts from $50,000 to $2,000,000; loans above $1.5M cap at 65% LTV.',
+      'Minimum property value is $75,000 for non-owner-occupied rental collateral.',
+      'Representative FICO must be 660+; standard max LTV is up to 80% for qualifying purchases/rate-term refinances.',
+      'Eligible collateral includes single-family, 2-4 unit, condos, townhomes/PUDs, and 5-8 unit multifamily.',
+    ],
+    excludedStates: ['ND', 'SD', 'UT', 'NV'],
+    entityOnlyStates: ['VA', 'NY', 'GA', 'FL'],
   },
 ]
 
@@ -287,6 +321,15 @@ function rankLenders(search: SearchForm): RankedLender[] {
       if (lender.timelines.includes(search.timeline)) {
         score += 10
         reasons.push(`Can work toward a ${search.timeline} close`)
+      }
+
+      if (lender.excludedStates?.includes(search.propertyState.trim().toUpperCase())) {
+        score -= 30
+        reasons.push(`${search.propertyState.toUpperCase()} is listed as a restricted state`)
+      }
+
+      if (lender.entityOnlyStates?.includes(search.propertyState.trim().toUpperCase())) {
+        reasons.push(`${search.propertyState.toUpperCase()} requires entity-only borrowing`)
       }
 
       if (locationVerification) {
@@ -569,15 +612,37 @@ export function App() {
                       <li>Review manually: outside the strongest demo appetite bands.</li>
                     )}
                   </ul>
+                  {lender.searchCriteria ? (
+                    <div className="criteria-block">
+                      <strong>Guideline search criteria</strong>
+                      <ul>
+                        {lender.searchCriteria.map((criterion) => (
+                          <li key={criterion}>{criterion}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
-                <a
-                  className="button button-secondary"
-                  href={`mailto:quotes@blendercap.com?subject=${encodeURIComponent(
-                    `Scenario for ${lender.name}`,
-                  )}`}
-                >
-                  Request quote
-                </a>
+                <div className="result-actions">
+                  {lender.guidelineDocument ? (
+                    <a
+                      className="button button-secondary"
+                      href={lender.guidelineDocument.href}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      View {lender.guidelineDocument.title} ({lender.guidelineDocument.effectiveDate})
+                    </a>
+                  ) : null}
+                  <a
+                    className="button button-secondary"
+                    href={`mailto:quotes@blendercap.com?subject=${encodeURIComponent(
+                      `Scenario for ${lender.name}`,
+                    )}`}
+                  >
+                    Request quote
+                  </a>
+                </div>
               </article>
             ))}
           </div>
